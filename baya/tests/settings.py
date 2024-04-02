@@ -21,7 +21,6 @@ INSTALLED_APPS = (
     'django.contrib.auth',
     'django.contrib.sessions',
     'django.contrib.contenttypes',
-    'django_nose',
     'baya',
     'baya.tests',
     'baya.tests.submod',
@@ -82,8 +81,6 @@ STATIC_FILE_FINDERS = (
 
 STATIC_URL = '/static/'
 
-TEST_RUNNER = 'django_nose.NoseTestSuiteRunner'
-
 CSRF_USE_SESSIONS = False
 
 MIDDLEWARE = (
@@ -129,3 +126,5 @@ AUTH_LDAP_GROUP_SEARCH = LDAPSearch(
     ldap.SCOPE_SUBTREE,
     "(objectClass=groupOfNames)"
 )
+
+USE_TZ = False

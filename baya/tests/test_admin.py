@@ -1,4 +1,5 @@
 from django.contrib.admin.options import InlineModelAdmin
+import pytest
 
 from baya import RolesNode as g
 from baya.admin.sites import NestedGroupsAdminSite
@@ -15,15 +16,16 @@ from unittest import mock
 from unittest.mock import MagicMock
 
 
+@pytest.mark.django_db
 class TestAdminSite(LDAPGroupAuthTestBase):
     def test_module_perms(self):
         app_label = Blag._meta.app_label
         for user in ['has_all', 'has_a', 'has_aa', 'has_aaa']:
             request = self.mock_get_request(self.login(user))
-            self.assertTrue(request.user.has_module_perms(app_label))
+            assert request.user.has_module_perms(app_label)
 
         request = self.mock_get_request(self.login('has_b'))
-        self.assertFalse(request.user.has_module_perms(app_label))
+        assert not request.user.has_module_perms(app_label)
 
     def test_required_baya_groups(self):
         # The required groups for an admin site is the `or`-union of all
@@ -32,7 +34,7 @@ class TestAdminSite(LDAPGroupAuthTestBase):
         exp = ((g('AAA') & ALLOW_ALL) |
                (g('AA') & ALLOW_ALL) |
                (g('AA') | g('B')))
-        self.assertEqual(required_groups, exp)
+        assert required_groups == exp
 
     def test_required_baya_groups_repeats(self):
         """Repeated roles should only be shown once."""
@@ -52,81 +54,80 @@ class TestAdminSite(LDAPGroupAuthTestBase):
             site = NestedGroupsAdminSite()
             required_groups = site._get_required_baya_groups()
             exp = g('A')
-            self.assertEqual(required_groups, exp)
+            assert required_groups == exp
 
     def test_index(self):
         """Only display those apps which the user can access."""
         request = self.mock_get_request(self.login('has_all'))
         index = site.index(request)
         app_list = index.context_data['app_list']
-        self.assertEqual(len(app_list), 2)
+        assert len(app_list) == 2
         for app in app_list:
             models = {str(model['name']) for model in app['models']}
             if len(models) == 2:
-                self.assertEqual({"Blags", "Entries"}, models)
+                assert {"Blags", "Entries"} == models
                 for model in app['models']:
                     for permission in ['add', 'change', 'delete']:
-                        self.assertTrue(model['perms'][permission])
+                        assert model['perms'][permission]
             else:
-                self.assertEqual({"Comments"}, models)
+                assert {"Comments"} == models
                 model = app['models'][0]
-                self.assertTrue(model['perms']['add'])
-                self.assertTrue(model['perms']['change'])
-                self.assertFalse(model['perms']['delete'])
+                assert model['perms']['add']
+                assert model['perms']['change']
+                assert not model['perms']['delete']
 
     def test_read_only(self):
         # has_aaa can only access the read-only Blag changelist
         request = self.mock_get_request(self.login('has_aaa'))
         index = site.index(request)
         app_list = index.context_data['app_list']
-        self.assertEqual(len(app_list), 1)
+        assert len(app_list) == 1
         app_list = app_list[0]
-        self.assertEqual(
-            {"Blags"},
-            {str(model['name']) for model in app_list['models']})
+        assert {"Blags"} == {str(model['name']) for model in app_list['models']}
         perms = app_list['models'][0]['perms']
-        self.assertFalse(perms['add'])
-        self.assertTrue(perms['change'])
-        self.assertFalse(perms['delete'])
+        assert not perms['add']
+        assert perms['change']
+        assert not perms['delete']
 
 
+@pytest.mark.django_db
 class TestOptions(LDAPGroupAuthTestBase):
     def _get_options(self):
         return site._registry[Blag]
 
     def test_add_permissions(self):
         options = self._get_options()
-        self.assertTrue(
+        assert (
             options.has_add_permission(
                 self.mock_get_request(self.login('has_all'))))
-        self.assertTrue(
+        assert (
             options.has_add_permission(
                 self.mock_get_request(self.login('has_a'))))
-        self.assertFalse(
+        assert not (
             options.has_add_permission(
                 self.mock_get_request(self.login('has_aaa'))))
 
     def test_change_view_permission(self):
         options = self._get_options()
-        self.assertTrue(
+        assert (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_all'))))
-        self.assertTrue(
+        assert (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_a'))))
-        self.assertTrue(
+        assert (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_aaa'))))
 
     def test_delete_permission(self):
         options = self._get_options()
-        self.assertTrue(
+        assert (
             options.has_delete_permission(
                 self.mock_post_request(self.login('has_all'))))
-        self.assertTrue(
+        assert (
             options.has_delete_permission(
                 self.mock_post_request(self.login('has_a'))))
-        self.assertFalse(
+        assert not (
             options.has_delete_permission(
                 self.mock_post_request(self.login('has_aaa'))))
 
@@ -137,19 +138,19 @@ class TestCRUDOptions(LDAPGroupAuthTestBase):
 
     def test_create_permissions(self):
         options = self._get_options()
-        self.assertTrue(
+        assert (
             options.has_add_permission(
                 self.mock_get_request(self.login('has_all'))))
-        self.assertTrue(
+        assert (
             options.has_add_permission(
                 self.mock_get_request(self.login('has_a'))))
-        self.assertFalse(
+        assert not (
             options.has_add_permission(
                 self.mock_get_request(self.login('has_aa'))))
-        self.assertFalse(
+        assert not (
             options.has_add_permission(
                 self.mock_get_request(self.login('has_aaa'))))
-        self.assertFalse(
+        assert not (
             options.has_add_permission(
                 self.mock_get_request(self.login('has_b'))))
 
@@ -158,62 +159,63 @@ class TestCRUDOptions(LDAPGroupAuthTestBase):
         # Note - django admin doesn't distinguish between read and update, so
         # baya blocks read-only access from writing, but it still looks to
         # the admin like they have change permissions.
-        self.assertTrue(
+        assert (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_all'))))
-        self.assertTrue(
+        assert (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_a'))))
-        self.assertTrue(
+        assert (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_aa'))))
-        self.assertFalse(
+        assert not (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_aaa'))))
-        self.assertTrue(
+        assert (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_b'))))
 
     def test_update_permissions(self):
         options = self._get_options()
-        self.assertTrue(
+        assert (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_all'))))
-        self.assertTrue(
+        assert (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_a'))))
-        self.assertTrue(
+        assert (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_aa'))))
-        self.assertFalse(
+        assert not (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_aaa'))))
-        self.assertTrue(
+        assert (
             options.has_change_permission(
                 self.mock_get_request(self.login('has_b'))))
 
     def test_delete_permissions(self):
         options = self._get_options()
-        self.assertFalse(
+        assert not (
             options.has_delete_permission(
                 self.mock_get_request(self.login('has_all'))))
-        self.assertFalse(
+        assert not (
             options.has_delete_permission(
                 self.mock_get_request(self.login('has_a'))))
-        self.assertFalse(
+        assert not (
             options.has_delete_permission(
                 self.mock_get_request(self.login('has_aa'))))
-        self.assertFalse(
+        assert not (
             options.has_delete_permission(
                 self.mock_get_request(self.login('has_aaa'))))
-        self.assertFalse(
+        assert not (
             options.has_delete_permission(
                 self.mock_get_request(self.login('has_b'))))
 
 
+@pytest.mark.django_db
 class TestInlines(LDAPGroupAuthTestBase):
-    def setUp(self):
-        super(TestInlines, self).setUp()
+    def setup_method(self):
+        super().setup_method()
         Blag.objects.all().delete()
         self.blag = Blag.objects.create(name="My Blag")
         self.entries = [
@@ -230,19 +232,16 @@ class TestInlines(LDAPGroupAuthTestBase):
 
     def test_entries_displayed(self):
         inline_formsets = self._get_inlines()
-        self.assertEqual(len(inline_formsets), 2)
+        assert len(inline_formsets) == 2
         # The UnprotectedPhotoBlagEntryInline should not be here
         inline_opts = {type(inf.opts) for inf in inline_formsets}
-        self.assertEqual(
-            inline_opts, {BlagEntryInline, ProtectedPhotoBlagEntryInline})
+        assert inline_opts == {BlagEntryInline, ProtectedPhotoBlagEntryInline}
 
     def test_perms_correct(self):
         def _check(inline, request, add, change, delete):
-            self.assertEqual(inline.opts.has_add_permission(request, obj=None), add)
-            self.assertEqual(
-                inline.opts.has_change_permission(request), change)
-            self.assertEqual(
-                inline.opts.has_delete_permission(request), delete)
+            assert inline.opts.has_add_permission(request, obj=None) == add
+            assert inline.opts.has_change_permission(request) == change
+            assert inline.opts.has_delete_permission(request) == delete
 
         inline_formsets = self._get_inlines()
         while inline_formsets:
@@ -261,7 +260,7 @@ class TestInlines(LDAPGroupAuthTestBase):
     def test_inline_decoration(self):
         # This should fail because inlines don't have any {add,change,delete}
         # views to protect.
-        with self.assertRaises(TypeError):
+        with pytest.raises(TypeError):
             @requires(g('A'))
             class MyInline(InlineModelAdmin):
                 pass

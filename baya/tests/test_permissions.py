@@ -2,6 +2,7 @@ import functools
 from unittest.mock import patch
 from unittest.mock import sentinel
 from types import FunctionType
+import pytest
 
 import django
 from django.conf import settings
@@ -31,9 +32,10 @@ AAA = g('aaa')
 B = g('b')
 
 
+@pytest.mark.django_db
 class TestGate(LDAPGroupAuthTestBase):
-    def setUp(self):
-        super(TestGate, self).setUp()
+    def setup_method(self):
+        super(TestGate, self).setup_method()
         self.has_all = self.login('has_all')
         self.request_has_all = self.mock_get_request(self.has_all)
         self.has_aaa = self.login('has_aaa')
@@ -44,11 +46,11 @@ class TestGate(LDAPGroupAuthTestBase):
 
     def test_case_insensitive(self):
         """Groups should be case insensitive."""
-        self.assertEqual(g('A'), g('a'))
-        self.assertTrue(self._has_permissions(g('A'), ['A']))
-        self.assertTrue(self._has_permissions(g('A'), ['a']))
-        self.assertTrue(self._has_permissions(g('a'), ['A']))
-        self.assertTrue(self._has_permissions(g('a'), ['a']))
+        assert g('A') == g('a')
+        assert self._has_permissions(g('A'), ['A'])
+        assert self._has_permissions(g('A'), ['a'])
+        assert self._has_permissions(g('a'), ['A'])
+        assert self._has_permissions(g('a'), ['a'])
 
     def _test_perms(self, gate, has_all_perm, has_aaa_perm, method=None):
         if method == 'get':
@@ -57,10 +59,8 @@ class TestGate(LDAPGroupAuthTestBase):
             perm = 'has_post_permission'
         else:
             perm = 'has_any_permission'
-        self.assertEqual(getattr(gate, perm)(self.request_has_all),
-                         has_all_perm)
-        self.assertEqual(getattr(gate, perm)(self.request_has_aaa),
-                         has_aaa_perm)
+        assert getattr(gate, perm)(self.request_has_all) == has_all_perm
+        assert getattr(gate, perm)(self.request_has_aaa) == has_aaa_perm
 
     def test_no_permissions(self):
         """If no permissions declared, always allow."""
@@ -148,31 +148,30 @@ class TestGate(LDAPGroupAuthTestBase):
         self._test_perms(gate, True, True, 'get')
         self._test_perms(gate, True, False, 'post')
         self._test_perms(gate, True, True)
-        self.assertFalse(gate.get_requires is gate.post_requires)
+        assert gate.get_requires is not gate.post_requires
 
     def test_redirect(self):
         g1 = Gate()
-        self.assertEqual(g1.login_url, settings.BAYA_LOGIN_URL)
+        assert g1.login_url == settings.BAYA_LOGIN_URL
         g2 = Gate(login_url=None)
-        self.assertEqual(g2.login_url, settings.BAYA_LOGIN_URL)
+        assert g2.login_url == settings.BAYA_LOGIN_URL
         custom_login = "/testlogin/"
         g3 = Gate(login_url=custom_login)
-        self.assertEqual(g3.login_url, custom_login)
-        self.assertEqual(str((g3 + g2).login_url),
-                         str(custom_login))
-        self.assertEqual((g2 + g3).login_url, custom_login)
+        assert g3.login_url == custom_login
+        assert str((g3 + g2).login_url) == str(custom_login)
+        assert (g2 + g3).login_url == custom_login
         with override_settings(BAYA_LOGIN_URL="/testlogin/"):
             g4 = Gate()
-            self.assertEqual(g4.login_url, "/testlogin/")
+            assert g4.login_url == "/testlogin/"
         with override_settings(BAYA_LOGIN_URL=None):
             g5 = Gate()
-            self.assertEqual(g5.login_url, "/login/")
+            assert g5.login_url == "/login/"
 
     def test_lazy_login_url(self):
         lazy_login_url = reverse_lazy('lazy_login')
         gate = Gate(login_url=lazy_login_url)
-        self.assertEqual(gate.login_url, lazy_login_url)
-        self.assertEqual(str(gate.login_url), '/lazy_login/')
+        assert gate.login_url == lazy_login_url
+        assert str(gate.login_url) == '/lazy_login/'
 
     def test_non_existent_group(self):
         """If you require a non-existent group, then nobody can authorize."""
@@ -182,24 +181,25 @@ class TestGate(LDAPGroupAuthTestBase):
         self._test_perms(gate, False, False)
 
 
+@pytest.mark.django_db
 class TestDeniedReason(LDAPGroupAuthTestBase):
     def test_not_logged_in(self):
         gate = Gate()
         request = self.mock_get_request()
         data = gate.get_permissions_required_data(request)
-        self.assertEqual(data['requires_groups'], g())
-        self.assertEqual(data['requires_groups_str'], "{}")
-        self.assertEqual(data['user_groups'], [])
-        self.assertEqual(data['user_groups_str'], "{}")
+        assert data['requires_groups'] == g()
+        assert data['requires_groups_str'] == "{}"
+        assert data['user_groups'] == []
+        assert data['user_groups_str'] == "{}"
 
     def test_insufficient_permissions(self):
         gate = Gate(AA | A)
         request = self.mock_get_request(self.login('has_aaa'))
         data = gate.get_permissions_required_data(request)
-        self.assertEqual(data['requires_groups'], AA | A)
-        self.assertEqual(data['requires_groups_str'], "{aa} | {a}")
-        self.assertEqual(data['user_groups'], ['aaa'])
-        self.assertEqual(data['user_groups_str'], "{aaa}")
+        assert data['requires_groups'] == AA | A
+        assert data['requires_groups_str'] == "{aa} | {a}"
+        assert data['user_groups'] == ['aaa']
+        assert data['user_groups_str'] == "{aaa}"
 
 
 class MyListView(ListView):
@@ -219,11 +219,11 @@ class TestRequires(LDAPGroupAuthTestBase):
     def test_str(self):
         """If given a string, convert to a PermissionNode."""
         req = requires('a')
-        self.assertEqual(req.gate.get_requires, A)
+        assert req.gate.get_requires == A
         req = requires(['a', 'b'])
-        self.assertEqual(req.gate.get_requires, A & B)
+        assert req.gate.get_requires == A & B
         req = requires('a, b')
-        self.assertEqual(req.gate.get_requires, A & B)
+        assert req.gate.get_requires == A & B
 
     def test_no_denied_not_logged_in(self):
         """A user can access unprotected views when not logged in."""
@@ -239,8 +239,8 @@ class TestRequires(LDAPGroupAuthTestBase):
         """Multiple requires calls in different URLs shouldn't interact."""
         call1 = requires(AA)(undecorated_view)
         call2 = requires(B)(undecorated_view)
-        self.assertFalse(hasattr(undecorated_view, '_gate'))
-        self.assertNotEqual(call1._gate, call2._gate)
+        assert not hasattr(undecorated_view, '_gate')
+        assert not call1._gate == call2._gate
 
         self.assert_no_permission(self.login('has_aaa'), call1)
         self.assert_no_permission(self.login('has_b'), call1)
@@ -255,10 +255,10 @@ class TestRequires(LDAPGroupAuthTestBase):
     def test_url_wrapping_syntax(self):
         """Test the syntax for decorating a url pattern."""
         decorated = requires(get=AA, post=g('nobody'))(undecorated_view)
-        self.assertTrue(hasattr(decorated, '_gate'))
-        self.assertTrue(isinstance(decorated._gate, Gate))
-        self.assertEqual(type(decorated), FunctionType)
-        self.assertEqual(decorated._gate.get_requires, AA)
+        assert hasattr(decorated, '_gate')
+        assert isinstance(decorated._gate, Gate)
+        assert type(decorated) == FunctionType
+        assert decorated._gate.get_requires == AA
         self.assert_has_get_permission(self.login('has_aa'), decorated)
         self.assert_has_get_permission(self.login('has_all'), decorated)
         self.assert_no_get_permission(self.login('has_aaa'), decorated)
@@ -268,9 +268,9 @@ class TestRequires(LDAPGroupAuthTestBase):
 
     def test_method_view_has_gate(self):
         """Test decorating a regular method view."""
-        self.assertTrue(hasattr(my_view, '_gate'))
-        self.assertTrue(isinstance(my_view._gate, Gate))
-        self.assertEqual(type(my_view), FunctionType)
+        assert hasattr(my_view, '_gate')
+        assert isinstance(my_view._gate, Gate)
+        assert type(my_view) == FunctionType
         exclude = requires(g('nobody'))(my_view)
         self.assert_has_get_permission(self.login('has_all'), my_view)
         self.assert_no_get_permission(self.login('has_all'), exclude)
@@ -289,16 +289,17 @@ class TestRequires(LDAPGroupAuthTestBase):
 
     def test_class_view_fails(self):
         """Test decorating a CBV."""
-        self.assertRaises(TypeError, requires(A), MyListView)
+        with pytest.raises(TypeError):
+            requires(A)(MyListView)
 
     def test_class_view_as_view_method(self):
         """Ensure that the as_view() method can be decorated."""
         view = MyListView.as_view()
         decorated1 = requires(g('one'))(view)
         decorated2 = requires(g('two'))(view)
-        self.assertFalse(decorated1 is view)
-        self.assertTrue(hasattr(decorated1, '_gate'))
-        self.assertNotEqual(decorated1._gate, decorated2._gate)
+        assert decorated1 is not view
+        assert hasattr(decorated1, '_gate')
+        assert not decorated1._gate == decorated2._gate
 
     def test_functools_partial(self):
         """Test that a functools.partial is able to be decorated."""
@@ -310,14 +311,14 @@ class TestRequires(LDAPGroupAuthTestBase):
 
         decorated1 = requires(g('one'))(view)
         decorated2 = requires(g('two'))(view)
-        self.assertFalse(decorated1 is view)
-        self.assertTrue(hasattr(decorated1, '_gate'))
-        self.assertNotEqual(decorated1._gate, decorated2._gate)
+        assert decorated1 is not view
+        assert hasattr(decorated1, '_gate')
+        assert not decorated1._gate == decorated2._gate
 
     def test_multiple(self):
         # B is anded with the others
         decorated1 = requires(B, get=AAA, post=AA)(undecorated_view)
-        self.assertEqual(decorated1._gate.post_requires, B & AA)
+        assert decorated1._gate.post_requires == B & AA
         self.assert_no_get_permission(self.login('has_b'), decorated1)
         self.assert_no_post_permission(self.login('has_b'), decorated1)
         self.assert_no_get_permission(self.login('has_aaa'), decorated1)
@@ -327,18 +328,18 @@ class TestRequires(LDAPGroupAuthTestBase):
 
         decorated2 = requires(get=(AAA | B), post=(AA | B))(
             undecorated_view)
-        self.assertEqual(decorated2._gate.get_requires, AAA | B)
-        self.assertEqual(decorated2._gate.post_requires, AA | B)
+        assert decorated2._gate.get_requires == AAA | B
+        assert decorated2._gate.post_requires == AA | B
 
         decorated2 = requires(A, get=(AAA | B), post=(AA | B))(
             undecorated_view)
-        self.assertEqual(decorated2._gate.get_requires, A & (AAA | B))
-        self.assertEqual(decorated2._gate.post_requires, A & (AA | B))
+        assert decorated2._gate.get_requires == A & (AAA | B)
+        assert decorated2._gate.post_requires == A & (AA | B)
 
     def test_chaining(self):
         decorated1 = requires(A)(undecorated_view)
         decorated2 = requires(B)(decorated1)
-        self.assertNotEqual(decorated1._gate, decorated2._gate)
+        assert not decorated1._gate == decorated2._gate
         self.assert_has_permission(self.login('has_a'), decorated1)
         self.assert_no_permission(self.login('has_a'), decorated2)
         # B doesn't have access to either, because decorated1 still requires A
@@ -351,38 +352,32 @@ class TestRequires(LDAPGroupAuthTestBase):
         decorated1 = requires(A)(undecorated_view)
         decorated2 = requires(B)(decorated1)
         for perm in ['get', 'post', 'any']:
-            self.assertTrue(
-                has_permission(decorated1, self.login('has_a'), perm))
-            self.assertFalse(
-                has_permission(decorated2, self.login('has_a'), perm))
-            self.assertFalse(
-                has_permission(decorated1, self.login('has_b'), perm))
-            self.assertFalse(
-                has_permission(decorated2, self.login('has_b'), perm))
-            self.assertTrue(
-                has_permission(decorated1, self.login('has_a_b'), perm))
-            self.assertTrue(
-                has_permission(decorated2, self.login('has_a_b'), perm))
+            assert has_permission(decorated1, self.login('has_a'), perm)
+            assert not has_permission(decorated2, self.login('has_a'), perm)
+            assert not has_permission(decorated1, self.login('has_b'), perm)
+            assert not has_permission(decorated2, self.login('has_b'), perm)
+            assert has_permission(decorated1, self.login('has_a_b'), perm)
+            assert has_permission(decorated2, self.login('has_a_b'), perm)
 
     def test_redirect(self):
         url = "url"
         decorated = requires(B, get=AAA, post=AA)(undecorated_view)
-        self.assertEqual(decorated._gate.login_url, settings.LOGIN_URL)
+        assert decorated._gate.login_url == settings.LOGIN_URL
         decorated = requires(B, login_url=url, get=AAA, post=AA)(
             undecorated_view)
-        self.assertEqual(decorated._gate.login_url, url)
+        assert decorated._gate.login_url == url
 
         with patch('django.contrib.auth.views.redirect_to_login',
                    return_value=sentinel) as do_redirect:
             request = self.mock_get_request()
             redirect = decorated(request)
             do_redirect.assert_called_once_with(request.get_full_path(), url)
-        self.assertIs(redirect, sentinel)
+        assert redirect is sentinel
 
     def test_str_view_path(self):
         """Test decorating a string path to a view throws an exception."""
-        self.assertRaises(
-            TypeError, requires(A), 'baya.tests.views.my_view')
+        with pytest.raises(TypeError):
+            requires(A)('baya.tests.views.my_view')
 
     def test_include(self):
         """Make sure requires(A)(include(my_app.urls)) works."""
@@ -391,10 +386,8 @@ class TestRequires(LDAPGroupAuthTestBase):
             [cell] = [cell for cell in pattern.resolve.__closure__
                       if isinstance(cell.cell_contents, requires)]
             requirer = cell.cell_contents
-            self.assertTrue(
-                PermissionChecker(['a']).visit(requirer.gate.get_requires))
-            self.assertTrue(
-                PermissionChecker(['a']).visit(requirer.gate.post_requires))
+            assert PermissionChecker(['a']).visit(requirer.gate.get_requires)
+            assert PermissionChecker(['a']).visit(requirer.gate.post_requires)
 
     def test_deny_all(self):
         def _no_perms(method):

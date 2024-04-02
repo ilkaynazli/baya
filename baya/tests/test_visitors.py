@@ -1,5 +1,5 @@
 from unittest.mock import MagicMock
-from unittest import TestCase
+import pytest
 
 from ..dynamic_roles import DjangoRequestGroupFormatter
 from ..membership import DynamicRolesNode as dg
@@ -9,8 +9,9 @@ from ..visitors import ExpressionWriter
 from ..visitors import PermissionChecker
 
 
-class TestPermissionChecker(TestCase):
-    def setUp(self):
+@pytest.mark.django_db
+class TestPermissionChecker():
+    def setup_method(self):
         self.a = g('A')
         self.b = g('B')
         self.c = g('C')
@@ -32,139 +33,130 @@ class TestPermissionChecker(TestCase):
         return PermissionChecker(roles).visit(node, **kwargs)
 
     def test_set_membership_single(self):
-        self.assertTrue(self._has_permissions(self.a, ['A']))
-        self.assertFalse(self._has_permissions(self.a, ['B']))
+        assert self._has_permissions(self.a, ['A'])
+        assert not self._has_permissions(self.a, ['B'])
 
     def test_and(self):
         and_node = self.a & self.b
-        self.assertTrue(self._has_permissions(and_node, ['A', 'B']))
-        self.assertFalse(self._has_permissions(and_node, ['A']))
-        self.assertFalse(self._has_permissions(and_node, ['B']))
+        assert self._has_permissions(and_node, ['A', 'B'])
+        assert not self._has_permissions(and_node, ['A'])
+        assert not self._has_permissions(and_node, ['B'])
 
     def test_and_dynamic(self):
         """Ensure the group permissions are using the requested group."""
         and_node = self.a & self.s_admin
-        self.assertTrue(self._has_permissions(
-            and_node, ['A', 'a_admin'], request=self.mock_request('A')))
-        self.assertFalse(self._has_permissions(
-            and_node, ['A', 'a_admin'], request=self.mock_request('B')))
+        assert self._has_permissions(
+            and_node, ['A', 'a_admin'], request=self.mock_request('A'))
+        assert not self._has_permissions(
+            and_node, ['A', 'a_admin'], request=self.mock_request('B'))
 
     def test_or(self):
         or_node = self.a | self.b
-        self.assertTrue(self._has_permissions(or_node, ['A', 'B']))
-        self.assertTrue(self._has_permissions(or_node, ['A']))
-        self.assertTrue(self._has_permissions(or_node, ['B']))
-        self.assertTrue(self._has_permissions(or_node, ['A', 'B', 'C']))
+        assert self._has_permissions(or_node, ['A', 'B'])
+        assert self._has_permissions(or_node, ['A'])
+        assert self._has_permissions(or_node, ['B'])
+        assert self._has_permissions(or_node, ['A', 'B', 'C'])
 
     def test_xor(self):
         xor_node = self.a ^ self.b
-        self.assertFalse(self._has_permissions(xor_node, ['A', 'B']))
-        self.assertTrue(self._has_permissions(xor_node, ['A']))
-        self.assertTrue(self._has_permissions(xor_node, ['B']))
+        assert not self._has_permissions(xor_node, ['A', 'B'])
+        assert self._has_permissions(xor_node, ['A'])
+        assert self._has_permissions(xor_node, ['B'])
 
     def test_not(self):
         not_node = ~self.a
-        self.assertFalse(self._has_permissions(not_node, ['A', 'B']))
-        self.assertFalse(self._has_permissions(not_node, ['A']))
-        self.assertTrue(self._has_permissions(not_node, ['B']))
-        self.assertFalse(self._has_permissions(not_node, ['A', 'B', 'C']))
-        self.assertTrue(self._has_permissions(not_node, ['B', 'C']))
+        assert not self._has_permissions(not_node, ['A', 'B'])
+        assert not self._has_permissions(not_node, ['A'])
+        assert self._has_permissions(not_node, ['B'])
+        assert not self._has_permissions(not_node, ['A', 'B', 'C'])
+        assert self._has_permissions(not_node, ['B', 'C'])
 
     def test_and_or_and(self):
         node = (self.a & self.b) | (self.c & self.s_admin)
         req = self.mock_request('a')
-        self.assertFalse(self._has_permissions(node, ['A'], request=req))
-        self.assertFalse(self._has_permissions(node, ['B'], request=req))
-        self.assertFalse(self._has_permissions(node, ['C'], request=req))
-        self.assertFalse(
-            self._has_permissions(node, ['a_admin'], request=req))
-        self.assertTrue(self._has_permissions(node, ['A', 'B'], request=req))
-        self.assertTrue(
-            self._has_permissions(node, ['a_admin', 'C'], request=req))
-        self.assertFalse(self._has_permissions(node, ['A', 'C'], request=req))
-        self.assertFalse(
-            self._has_permissions(node, ['B', 'a_admin'], request=req))
+        assert not self._has_permissions(node, ['A'], request=req)
+        assert not self._has_permissions(node, ['B'], request=req)
+        assert not self._has_permissions(node, ['C'], request=req)
+        assert not self._has_permissions(node, ['a_admin'], request=req)
+        assert self._has_permissions(node, ['A', 'B'], request=req)
+        assert self._has_permissions(node, ['a_admin', 'C'], request=req)
+        assert not self._has_permissions(node, ['A', 'C'], request=req)
+        assert not self._has_permissions(node, ['B', 'a_admin'], request=req)
 
     def test_and_xor_not_and(self):
         """What a ridiculous membership requirement."""
         node = (self.a & self.b) ^ ~(self.c | self.s_admin)
         req = self.mock_request('A')
-        self.assertTrue(self._has_permissions(node, ['A'], request=req))
-        self.assertTrue(self._has_permissions(node, ['B'], request=req))
-        self.assertFalse(self._has_permissions(node, ['C'], request=req))
-        self.assertFalse(self._has_permissions(node, ['a_admin'], request=req))
-        self.assertFalse(self._has_permissions(node, ['A', 'B'], request=req))
-        self.assertFalse(
-            self._has_permissions(node, ['a_admin', 'C'], request=req))
-        self.assertFalse(self._has_permissions(node, ['A', 'C'], request=req))
-        self.assertFalse(
-            self._has_permissions(node, ['B', 'a_admin'], request=req))
-        self.assertTrue(self._has_permissions(
-            node, ['A', 'B', 'a_admin'], request=req))
-        self.assertTrue(self._has_permissions(
-            node, ['A', 'B', 'C'], request=req))
-        self.assertTrue(self._has_permissions(
-            node, ['A', 'B', 'C', 'a_admin'], request=req))
+        assert self._has_permissions(node, ['A'], request=req)
+        assert self._has_permissions(node, ['B'], request=req)
+        assert not self._has_permissions(node, ['C'], request=req)
+        assert not self._has_permissions(node, ['a_admin'], request=req)
+        assert not self._has_permissions(node, ['A', 'B'], request=req)
+        assert not self._has_permissions(node, ['a_admin', 'C'], request=req)
+        assert not self._has_permissions(node, ['A', 'C'], request=req)
+        assert not self._has_permissions(node, ['B', 'a_admin'], request=req)
+        assert self._has_permissions(node, ['A', 'B', 'a_admin'], request=req)
+        assert self._has_permissions(node, ['A', 'B', 'C'], request=req)
+        assert self._has_permissions(node, ['A', 'B', 'C', 'a_admin'], request=req)
 
     def test_value_node(self):
         node1 = ValueNode(True)
         node2 = ~ValueNode(False)
-        self.assertTrue(self._has_permissions(node1, ['A']))
-        self.assertTrue(self._has_permissions(node2, ['A']))
-        self.assertTrue(self._has_permissions(node1, ['']))
-        self.assertTrue(self._has_permissions(node2, ['']))
-        self.assertTrue(self._has_permissions(node1, ['A', 'F']))
-        self.assertTrue(self._has_permissions(node2, ['A', 'F']))
+        assert self._has_permissions(node1, ['A'])
+        assert self._has_permissions(node2, ['A'])
+        assert self._has_permissions(node1, [''])
+        assert self._has_permissions(node2, [''])
+        assert self._has_permissions(node1, ['A', 'F'])
+        assert self._has_permissions(node2, ['A', 'F'])
         node1 = ValueNode(False)
         node2 = ~ValueNode(True)
-        self.assertFalse(self._has_permissions(node1, ['A']))
-        self.assertFalse(self._has_permissions(node2, ['A']))
-        self.assertFalse(self._has_permissions(node1, ['']))
-        self.assertFalse(self._has_permissions(node2, ['']))
-        self.assertFalse(self._has_permissions(node1, ['A', 'F']))
-        self.assertFalse(self._has_permissions(node2, ['A', 'F']))
+        assert not self._has_permissions(node1, ['A'])
+        assert not self._has_permissions(node2, ['A'])
+        assert not self._has_permissions(node1, [''])
+        assert not self._has_permissions(node2, [''])
+        assert not self._has_permissions(node1, ['A', 'F'])
+        assert not self._has_permissions(node2, ['A', 'F'])
 
     def test_member_and_value_node(self):
         node = ValueNode(True) | g('A')
-        self.assertTrue(self._has_permissions(node, ['A']))
-        self.assertTrue(self._has_permissions(node, ['']))
-        self.assertTrue(self._has_permissions(node, ['A', 'F']))
+        assert self._has_permissions(node, ['A'])
+        assert self._has_permissions(node, [''])
+        assert self._has_permissions(node, ['A', 'F'])
         node = ValueNode(True) & g('A')
-        self.assertTrue(self._has_permissions(node, ['A']))
-        self.assertFalse(self._has_permissions(node, ['']))
-        self.assertTrue(self._has_permissions(node, ['A', 'F']))
+        assert self._has_permissions(node, ['A'])
+        assert not self._has_permissions(node, [''])
+        assert self._has_permissions(node, ['A', 'F'])
         node = ValueNode(False) | g('A')
-        self.assertTrue(self._has_permissions(node, ['A']))
-        self.assertFalse(self._has_permissions(node, ['']))
-        self.assertTrue(self._has_permissions(node, ['A', 'F']))
+        assert self._has_permissions(node, ['A'])
+        assert not self._has_permissions(node, [''])
+        assert self._has_permissions(node, ['A', 'F'])
         node = ValueNode(False) & g('A')
-        self.assertFalse(self._has_permissions(node, ['A']))
-        self.assertFalse(self._has_permissions(node, ['']))
-        self.assertFalse(self._has_permissions(node, ['A', 'F']))
+        assert not self._has_permissions(node, ['A'])
+        assert not self._has_permissions(node, [''])
+        assert not self._has_permissions(node, ['A', 'F'])
 
 
-class TestExpressionWriter(TestCase):
-    def setUp(self):
+@pytest.mark.django_db
+class TestExpressionWriter():
+    def setup_method(self):
         self.writer = ExpressionWriter()
 
     def test_operator_precedence(self):
         node = g('A') ^ g('B') | g('C') ^ g('D')
-        self.assertEqual('{a} ^ {b} | {c} ^ {d}', self.writer.visit(node),
-                         repr(node))
+        assert '{a} ^ {b} | {c} ^ {d}', self.writer.visit(node) == repr(node)
         node = ~(g('A') & g('B')) ^ (g('C') | g('D') & g('E'))
-        self.assertEqual('~{a, b} ^ ({c} | {d, e})', self.writer.visit(node),
-                         repr(node))
+        assert '~{a, b} ^ ({c} | {d, e})', self.writer.visit(node) == repr(node)
 
     def test_unary(self):
         node = ~~g('A')
-        self.assertEqual('~~{a}', self.writer.visit(node), repr(node))
+        assert '~~{a}', self.writer.visit(node) == repr(node)
         node = ~(g('A') ^ g('B'))
-        self.assertEqual('~({a} ^ {b})', self.writer.visit(node), repr(node))
+        assert '~({a} ^ {b})', self.writer.visit(node) == repr(node)
 
     def test_value_node(self):
         node = ~ValueNode(True)
-        self.assertEqual('~True', self.writer.visit(node))
+        assert '~True' == self.writer.visit(node)
         node = g('A') & ValueNode(False)
-        self.assertEqual('{a} & False', self.writer.visit(node))
+        assert '{a} & False' == self.writer.visit(node)
         node = ~node
-        self.assertEqual('~({a} & False)', self.writer.visit(node))
+        assert '~({a} & False)' == self.writer.visit(node)

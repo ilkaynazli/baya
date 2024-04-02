@@ -1,8 +1,9 @@
-from distutils.version import StrictVersion
+import pytest
 
-from django import get_version as get_django_version
+from pytest_django.asserts import assertRedirects, assertContains, assertNotContains
 from django.urls import reverse
 from django.test.utils import override_settings
+from django.test import client as dj_client
 
 from baya.tests.test_base import LDAPGroupAuthTestBase
 from baya.tests.models import Blag
@@ -23,10 +24,9 @@ class _IntegrationBase(LDAPGroupAuthTestBase):
     URL level, and the RF doesn't go through that.
     """
     def get_client(self, username=None, password='password'):
-        client = self.client
+        client = dj_client.Client()
         if username:
-            self.assertTrue(
-                client.login(username=username, password=password))
+            assert client.login(username=username, password=password)
         return client
 
     def _get_and_assert_access(
@@ -35,26 +35,24 @@ class _IntegrationBase(LDAPGroupAuthTestBase):
         client = self.get_client(username)
         url = reverse(url_name, args=reverse_args, kwargs=reverse_kwargs)
         response = client.get(url)
-        self.assertEqual(
-            response.status_code,
-            target_status_code,
-            '%s != %s, %s' % (response.status_code, target_status_code,
-                              message))
+        assert response.status_code == target_status_code,\
+            f"{response.status_code} != {target_status_code}, {message}"
         return response
 
 
+@pytest.mark.django_db
 class TestIntegration(_IntegrationBase):
     def _test_login_redirect(
             self, url_name, username, target_status_code, login_url='login'):
         client = self.get_client()
         url = reverse(url_name)
         response = client.get(url)
-        self.assertRedirects(
+        assertRedirects(
             response, "%s?next=%s" % (reverse(login_url), url))
         login_response = client.post(
             response['Location'],
             {'username': username, 'password': 'password'})
-        self.assertRedirects(
+        assertRedirects(
             login_response, url, target_status_code=target_status_code)
         client.logout()
 
@@ -73,16 +71,14 @@ class TestIntegration(_IntegrationBase):
         def _has_method(client, method):
             verb = getattr(client, method)
             response = verb(url)
-            self.assertEqual(
-                response.status_code, OK,
-                "Error %s: %s not allowed" % (response.status_code, method))
+            assert response.status_code == OK,\
+                "Error %s: %s not allowed" % (response.status_code, method)
 
         def _has_not_method(client, method):
             verb = getattr(client, method)
             response = verb(url)
-            self.assertEqual(
-                response.status_code, DENIED,
-                "Error %s: %s allowed" % (response.status_code, method))
+            assert response.status_code == DENIED,\
+                "Error %s: %s allowed" % (response.status_code, method)
 
         url = reverse('my_view')
 
@@ -105,7 +101,7 @@ class TestIntegration(_IntegrationBase):
     def test_index(self):
         blag = Blag.objects.create(name="my blag")
         response = self._get_and_assert_access('index', 'has_all', OK)
-        self.assertContains(response, blag.name)
+        assertContains(response, blag.name)
 
     def test_my_view_str(self):
         """Test a decorated view method works when resolved by string path."""
@@ -199,19 +195,19 @@ class TestIntegration(_IntegrationBase):
             'query_param_view', 'has_aa', OK, reverse_kwargs={'name': 'aa'})
 
 
+@pytest.mark.django_db
 class TestAdminIntegration(_IntegrationBase):
     def test_admin_view_uses_baya(self):
         # Default django admin_view returns a 200, not a 403
         client = self.get_client('has_nothing')
         url = reverse('admin:index')
         response = client.get(url)
-        self.assertEqual(response.status_code, 403)
+        assert response.status_code == 403
         # Ensure that baya_requires was set on the request
-        self.assertTrue(hasattr(response.context['request'], 'baya_requires'))
+        assert hasattr(response.context['request'], 'baya_requires')
         # And that it's in the 403 template
-        self.assertIn(
-            "<b>{aaa} &amp; True | {aa} &amp; True | {aa} | {b}</b>",
-            response.content.decode('utf-8'))
+        assert ("<b>{aaa} &amp; True | {aa} &amp; True | {aa} | {b}</b>"
+                in response.content.decode('utf-8'))
 
     def test_index(self):
         for url, reverse_kwargs in [
@@ -219,18 +215,18 @@ class TestAdminIntegration(_IntegrationBase):
                 ('admin:app_list', {'app_label': 'tests'})]:
             response = self._get_and_assert_access(
                 url, 'has_all', OK, reverse_kwargs=reverse_kwargs)
-            self.assertContains(response, 'Blags')
-            self.assertContains(response, 'Entries')
+            assertContains(response, 'Blags')
+            assertContains(response, 'Entries')
             if 'index' in url:
-                self.assertContains(response, 'Comments')
+                assertContains(response, 'Comments')
             else:
-                self.assertNotContains(response, 'Comments')
+                assertNotContains(response, 'Comments')
 
             response = self._get_and_assert_access(
                 url, 'has_aaa', OK, reverse_kwargs=reverse_kwargs)
-            self.assertContains(response, 'Blags')
-            self.assertNotContains(response, 'Entries')
-            self.assertNotContains(response, 'Comments')
+            assertContains(response, 'Blags')
+            assertNotContains(response, 'Entries')
+            assertNotContains(response, 'Comments')
 
             if 'index' in url:
                 # B just sees an empty admin page, following the normal
@@ -238,20 +234,12 @@ class TestAdminIntegration(_IntegrationBase):
                 response = self._get_and_assert_access(
                     url, 'has_b', OK, reverse_kwargs=reverse_kwargs,
                     message=url)
-                self.assertNotContains(response, 'Blags')
-                self.assertNotContains(response, 'Entries')
-                self.assertContains(response, 'Comments')
+                assertNotContains(response, 'Blags')
+                assertNotContains(response, 'Entries')
+                assertContains(response, 'Comments')
             else:
-                # In django <1.7 >1.10 B gets a 404 for app_list.
-                # In django >=1.7 <=1.10 B get sa 403, like you'd expect.
-                django_version = StrictVersion(get_django_version())
-                if (django_version >= StrictVersion('1.7.0') and
-                        django_version < StrictVersion('1.11.0')):
-                    expected_status = DENIED
-                else:
-                    expected_status = NOT_FOUND
                 response = self._get_and_assert_access(
-                    url, 'has_b', expected_status,
+                    url, 'has_b', NOT_FOUND,
                     reverse_kwargs=reverse_kwargs,
                     message=url)
 
@@ -280,13 +268,13 @@ class TestAdminIntegration(_IntegrationBase):
         data = self._get_form_data()
         data.update({'name': 'has_all blag'})
         response = client.post(add_url, data)
-        self.assertRedirects(response, changelist_url)
-        self.assertEqual(Blag.objects.count(), blag_count + 1)
+        assertRedirects(response, changelist_url)
+        assert Blag.objects.count() == blag_count + 1
         # And the POST is rejected too
         client = self.get_client('has_aaa')
         response = client.post(add_url, {'name': 'has_aaa blag'})
-        self.assertEqual(response.status_code, DENIED)
-        self.assertEqual(Blag.objects.count(), blag_count + 1)
+        assert response.status_code == DENIED
+        assert Blag.objects.count() == blag_count + 1
 
     def test_changelist_view(self):
         self._get_and_assert_access(
@@ -309,7 +297,7 @@ class TestAdminIntegration(_IntegrationBase):
         client = self.get_client('has_b')
         response = client.post(
             change_url, {'id': '%s' % comment.id, 'body': 'syke'})
-        self.assertEqual(response.status_code, DENIED)
+        assert response.status_code == DENIED
 
     def test_changelist_post(self):
         changelist_url = reverse('admin:tests_blag_changelist')
@@ -326,13 +314,13 @@ class TestAdminIntegration(_IntegrationBase):
         # But AAA can't actually change anything
         client = self.get_client('has_aaa')
         response = client.post(changelist_url, delete_kwargs)
-        self.assertEqual(response.status_code, DENIED)
-        self.assertEqual(Blag.objects.count(), blag_count)
+        assert response.status_code == DENIED
+        assert Blag.objects.count() == blag_count
 
         client = self.get_client('has_all')
         response = client.post(changelist_url, delete_kwargs)
-        self.assertRedirects(response, changelist_url)
-        self.assertEqual(Blag.objects.count(), blag_count - 1)
+        assertRedirects(response, changelist_url)
+        assert Blag.objects.count() == blag_count - 1
 
     def test_change_view(self):
         blag = Blag.objects.create(name="blagonet")
@@ -358,14 +346,14 @@ class TestAdminIntegration(_IntegrationBase):
             'name': 'new name',
         })
         response = client.post(change_url, data)
-        self.assertRedirects(response, changelist_url)
-        self.assertEqual(Blag.objects.get(id=blag.id).name, 'new name')
+        assertRedirects(response, changelist_url)
+        assert Blag.objects.get(id=blag.id).name == 'new name'
 
         # ...but AAA Cannot actually change anything
         client = self.get_client('has_aaa')
         response = client.post(
             change_url, {'id': '%s' % blag.id, 'name': 'newer name'})
-        self.assertEqual(response.status_code, DENIED)
+        assert response.status_code == DENIED
 
     def test_delete_view(self):
         blag = Blag.objects.create(name="blagonet")
@@ -391,24 +379,25 @@ class TestAdminIntegration(_IntegrationBase):
         # ...but AAA Cannot actually change anything
         client = self.get_client('has_aaa')
         response = client.post(delete_url, data)
-        self.assertEqual(response.status_code, DENIED)
+        assert response.status_code == DENIED
 
         client = self.get_client('has_all')
         response = client.post(delete_url, data)
-        self.assertRedirects(response, changelist_url)
-        self.assertEqual(Blag.objects.count(), 0)
+        assertRedirects(response, changelist_url)
+        assert Blag.objects.count() == 0
 
     def test_inner_url(self):
         """Should be able to decorate urls in ModelAdmin.get_urls()."""
         blag1 = Blag.objects.create(name='blag one')
         blag2 = Blag.objects.create(name='blag two')
         response = self._get_and_assert_access('admin:list', 'has_all', OK)
-        self.assertContains(response, blag1.name)
-        self.assertContains(response, blag2.name)
+        assertContains(response, blag1.name)
+        assertContains(response, blag2.name)
         self._get_and_assert_access('admin:list', 'has_aaa', DENIED)
         self._get_and_assert_access('admin:list', 'has_b', DENIED)
 
 
+@pytest.mark.django_db
 class TestAdminInlineIntegration(_IntegrationBase):
     def _get_form_data(self):
         return {
@@ -423,7 +412,7 @@ class TestAdminInlineIntegration(_IntegrationBase):
     def test_add(self):
         blag = Blag.objects.create(name="blagonet")
         PhotoBlagEntry.objects.all().delete()
-        self.assertEqual(PhotoBlagEntry.objects.all().count(), 0)
+        assert PhotoBlagEntry.objects.all().count() == 0
         change_url = reverse('admin:tests_blag_change', args=[blag.id])
         changelist_url = reverse('admin:tests_blag_changelist')
 
@@ -436,15 +425,14 @@ class TestAdminInlineIntegration(_IntegrationBase):
         # B has no permissions
         client = self.get_client('has_b')
         response = client.post(change_url, data)
-        self.assertEqual(response.status_code, 403)
+        assert response.status_code == 403
 
         # A succeedes
         client = self.get_client('has_a')
         response = client.post(change_url, data)
-        self.assertRedirects(response, changelist_url)
-        self.assertEqual(
-            Blag.objects.get(id=blag.id).photoblagentry_set.count(), 1)
-        self.assertEqual(PhotoBlagEntry.objects.all().count(), 1)
+        assertRedirects(response, changelist_url)
+        assert Blag.objects.get(id=blag.id).photoblagentry_set.count() == 1
+        assert PhotoBlagEntry.objects.all().count() == 1
 
     def test_change(self):
         blag = Blag.objects.create(name="blagonet")
@@ -453,8 +441,7 @@ class TestAdminInlineIntegration(_IntegrationBase):
 
         change_url = reverse('admin:tests_blag_change', args=[blag.id])
         changelist_url = reverse('admin:tests_blag_changelist')
-        self.assertEqual(
-            Blag.objects.get(id=blag.id).photoblagentry_set.count(), 1)
+        assert Blag.objects.get(id=blag.id).photoblagentry_set.count() == 1
 
         data = self._get_form_data()
         data.update({
@@ -468,17 +455,16 @@ class TestAdminInlineIntegration(_IntegrationBase):
         # B has no permissions
         client = self.get_client('has_b')
         response = client.post(change_url, data)
-        self.assertEqual(response.status_code, 403)
+        assert response.status_code == 403
 
         # A successfully alters the entry
         client = self.get_client('has_a')
-        self.assertContains(client.get(change_url), entry.title)
+        assertContains(client.get(change_url), entry.title)
         response = client.post(change_url, data)
-        self.assertRedirects(response, changelist_url)
-        self.assertEqual(
-            Blag.objects.get(id=blag.id).photoblagentry_set.count(), 1)
-        self.assertEqual(PhotoBlagEntry.objects.all().count(), 1)
-        self.assertEqual(PhotoBlagEntry.objects.get().title, 'my new title')
+        assertRedirects(response, changelist_url)
+        assert Blag.objects.get(id=blag.id).photoblagentry_set.count() == 1
+        assert PhotoBlagEntry.objects.all().count() == 1
+        assert PhotoBlagEntry.objects.get().title == 'my new title'
 
     def test_delete(self):
         blag = Blag.objects.create(name="blagonet")
@@ -502,12 +488,11 @@ class TestAdminInlineIntegration(_IntegrationBase):
         # B has no permissions
         client = self.get_client('has_b')
         response = client.post(change_url, data)
-        self.assertEqual(response.status_code, 403)
+        assert response.status_code == 403
 
         # A successfully deletes the entry
         client = self.get_client('has_a')
         response = client.post(change_url, data)
-        self.assertRedirects(response, changelist_url)
-        self.assertEqual(
-            Blag.objects.get(id=blag.id).photoblagentry_set.count(), 0)
-        self.assertEqual(PhotoBlagEntry.objects.all().count(), 0)
+        assertRedirects(response, changelist_url)
+        assert Blag.objects.get(id=blag.id).photoblagentry_set.count() == 0
+        assert PhotoBlagEntry.objects.all().count() == 0

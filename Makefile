@@ -6,7 +6,7 @@ WITH_VENV=. $(VENV_ACTIVATE);
 ifdef TRAVIS_PYTHON_VERSION
     PYTHON=python$(TRAVIS_PYTHON_VERSION)
 else
-    PYTHON=python3.9
+    PYTHON=python3.10
 endif
 
 ifdef TOX_ENV
@@ -84,3 +84,25 @@ dist: venv
 .PHONY: sdist
 sdist: dist
 	@echo "runs dist"
+
+### Infastructure for Github Actions
+.PHONY: ci-libs
+ci-libs:
+	sudo apt-get update -y
+	sudo apt-get install -y libldap2-dev libssl-dev libsasl2-dev
+
+.PHONY: ci-install
+ci-install: ci-libs venv
+
+.PHONY: ci-lint
+ci-lint: lint
+
+.PHONY: ci-test
+ci-test: test
+
+.PHONY: ci-version
+ci-version: version
+
+.PHONY: ci-publish
+ci-publish:
+	$(WITH_VENV) python setup.py sdist

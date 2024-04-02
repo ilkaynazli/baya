@@ -26,21 +26,21 @@ class TestDjangoRequestGroupFormatter(TestCase):
     def test_returns_set(self):
         """The formatter should return a set of groups."""
         roles = self.formatter(self.build_mock_request('mygroup'))
-        self.assertEqual(type(roles), set)
-        self.assertEqual(len(roles), 1)
-        self.assertEqual(roles.pop(), "mygroup_admin")
+        assert type(roles) == set
+        assert len(roles) == 1
+        assert roles.pop() == "mygroup_admin"
 
     def test_query_param(self):
         request = self.build_mock_request('mygroup')
         roles = self.formatter(request)
-        self.assertEqual(roles, {'mygroup_admin'})
+        assert roles == {'mygroup_admin'}
 
     def test_reverse_kwarg(self):
         request = self.build_mock_request('mygroup')
         request.GET = {}
         request.resolver_match.kwargs = {'group': 'mygroup'}
         roles = self.formatter(request)
-        self.assertEqual(roles, {'mygroup_admin'})
+        assert roles == {'mygroup_admin'}
 
     def test_query_param_collision(self):
         """The URL kwarg should take precedence over the query parameter."""
@@ -48,14 +48,14 @@ class TestDjangoRequestGroupFormatter(TestCase):
         request.resolver_match.kwargs = {'group': 'kwarg_group'}
         with patch('baya.dynamic_roles.logger') as mock_logger:
             roles = self.formatter(request)
-            self.assertEqual(mock_logger.warning.call_count, 1)
-        self.assertEqual(roles, {'kwarg_group_admin'})
+            assert mock_logger.warning.call_count == 1
+        assert roles == {'kwarg_group_admin'}
 
     def test_str(self):
         st = str(self.formatter)
-        self.assertIn("%s_admin", st)
-        self.assertIn("group", st)
+        assert "%s_admin" in st
+        assert "group" in st
 
     def test_repr(self):
         re = repr(self.formatter)
-        self.assertIn(self.formatter.__class__.__name__, re)
+        assert self.formatter.__class__.__name__ in re

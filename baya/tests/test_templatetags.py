@@ -1,9 +1,11 @@
+import pytest
 from django.template import Context
 from django.template import Template
 from .test_base import LDAPGroupAuthTestBase
 from django.contrib.auth.models import AnonymousUser
 
 
+@pytest.mark.django_db
 class CanUserPerformActionTagTest(LDAPGroupAuthTestBase):
 
     BASIC_TEMPLATE = Template(
@@ -22,7 +24,7 @@ class CanUserPerformActionTagTest(LDAPGroupAuthTestBase):
             'user': AnonymousUser(),
         })
         rendered = self.BASIC_TEMPLATE.render(context)
-        self.assertIn('False', rendered)
+        assert 'False' in rendered
 
     def test_has_permission_false(self):
         context = Context({
@@ -30,7 +32,7 @@ class CanUserPerformActionTagTest(LDAPGroupAuthTestBase):
             'user': self.login('has_nothing'),
         })
         rendered = self.BASIC_TEMPLATE.render(context)
-        self.assertIn('False', rendered)
+        assert 'False' == rendered
 
     def test_has_permission_true(self):
         context = Context({
@@ -38,4 +40,4 @@ class CanUserPerformActionTagTest(LDAPGroupAuthTestBase):
             'user': self.login('has_all'),
         })
         rendered = self.BASIC_TEMPLATE.render(context)
-        self.assertIn('True', rendered)
+        assert 'True' in rendered

@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+import pytest
 
 import django
 from django_auth_ldap import backend
@@ -7,7 +8,7 @@ from django.contrib.auth.models import Group
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import PermissionDenied
 from django.middleware.csrf import _get_new_csrf_string
-from django.test import TestCase
+
 
 if django.VERSION[:2] <= (2, 2):
     from django.middleware.csrf import _salt_cipher_secret
@@ -20,26 +21,27 @@ from . import directory
 from ..mock_ldap_helpers import mock_ldap_setup
 
 
-class LDAPGroupAuthTestBase(TestCase):
+@pytest.mark.django_db
+class LDAPGroupAuthTestBase():
     @classmethod
-    def setUpClass(cls):
+    def setup_class(cls):
         cls.mockldap = mock_ldap_setup(
             ldap_dc='dc=test',
             extra_users=directory.test_users,
             group_lineage=directory.group_lineage)
 
     @classmethod
-    def tearDownClass(cls):
+    def teardown_class(cls):
         del cls.mockldap
 
-    def setUp(self):
+    def setup_method(self):
         self.mockldap.start()
         self.ldapobj = self.mockldap['ldap://localhost']
 
         self.backend = backend.LDAPBackend()
         self.backend.ldap  # Force global configuration
 
-    def tearDown(self):
+    def teardown_method(self):
         self.mockldap.stop()
         del self.ldapobj
 
@@ -88,11 +90,13 @@ class LDAPGroupAuthTestBase(TestCase):
 
     def assert_no_get_permission(self, user, view, get=None):
         request = self.mock_get_request(user, get=get)
-        self.assertRaises(PermissionDenied, view, request)
+        with pytest.raises(PermissionDenied):
+            view(request)
 
     def assert_no_post_permission(self, user, view, get=None, post=None):
         request = self.mock_post_request(user, get=get, post=post)
-        self.assertRaises(PermissionDenied, view, request)
+        with pytest.raises(PermissionDenied):
+            view(request)
 
     def assert_no_permission(self, user, view, get=None, post=None):
         self.assert_no_get_permission(user, view, get)
@@ -101,18 +105,19 @@ class LDAPGroupAuthTestBase(TestCase):
     def assert_has_get_permission(self, user, view, get=None):
         request = self.mock_get_request(user, get=get)
         response = view(request)
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
 
     def assert_has_post_permission(self, user, view, get=None, post=None):
         request = self.mock_post_request(user, get=get, post=post)
         response = view(request)
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
 
     def assert_has_permission(self, user, view, get=None, post=None):
         self.assert_has_get_permission(user, view, get)
         self.assert_has_post_permission(user, view, get, post)
 
 
+@pytest.mark.django_db
 class TestSetup(LDAPGroupAuthTestBase):
     def test_has_all_groups(self):
         """Verify that mockldap & django-auth-ldap are both working.
@@ -123,5 +128,5 @@ class TestSetup(LDAPGroupAuthTestBase):
         group_count = Group.objects.count()
         self.login('has_all')
         group_count_2 = Group.objects.count()
-        self.assertGreater(group_count_2, group_count)
-        self.assertEqual(group_count_2 - group_count, 6)
+        assert group_count_2 > group_count
+        assert group_count_2 - group_count == 6

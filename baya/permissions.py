@@ -2,7 +2,7 @@ import functools
 
 try:
     from collections.abc import Callable
-except:
+except Exception:
     from collections import Callable
 
 

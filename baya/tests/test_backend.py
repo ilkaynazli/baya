@@ -12,7 +12,7 @@ class TestReconnectingLDAP(TestCase):
     def test_getattr_not_initialize(self):
         ldap = Mock()
         reconnecting_ldap = ReconnectingLDAP(ldap)
-        self.assertIs(reconnecting_ldap.not_initialize, ldap.not_initialize)
+        assert reconnecting_ldap.not_initialize is ldap.not_initialize
 
     def test_initialize(self):
         ldap = Mock()
@@ -30,8 +30,8 @@ class TestReconnectingLDAPBackend(TestCase):
     def test_reconnecting_backend(self):
         backend = self.TestBackend()
         ldap_module = backend.ldap
-        self.assertTrue(isinstance(ldap_module, ReconnectingLDAP))
-        self.assertIs(ldap_module.SERVER_DOWN, ldap.SERVER_DOWN)
+        assert isinstance(ldap_module, ReconnectingLDAP)
+        assert ldap_module.SERVER_DOWN is ldap.SERVER_DOWN
 
 
 class TestNonReconnectingLDAPBackend(TestCase):
@@ -42,5 +42,5 @@ class TestNonReconnectingLDAPBackend(TestCase):
     def test_non_reconnecting_backend(self):
         backend = self.TestBackend()
         ldap_module = backend.ldap
-        self.assertFalse(isinstance(ldap_module, ReconnectingLDAP))
-        self.assertIs(ldap_module.SERVER_DOWN, ldap.SERVER_DOWN)
+        assert not isinstance(ldap_module, ReconnectingLDAP)
+        assert ldap_module.SERVER_DOWN is ldap.SERVER_DOWN
